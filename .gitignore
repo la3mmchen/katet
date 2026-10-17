@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+._*
+
+# build outputs: the app bundle and its test builds, generated brand files
+app/build/
+app/build-test/
+assets/brand/build/
+
+# Python
+__pycache__/
+*.pyc
+
+# editors
+.idea/
+.vscode/
+*.swp
+
+# never the state of a workspace, should one be created inside the checkout by mistake
+.coordinator/
+logs/

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# katet — board, coordinator and app for a katet workspace.
+#   katet init DIR               create a workspace: tasks/, CLAUDE.md, katet.conf, coordinator.tools
+#   katet board [--port N] [--no-open]
+#   katet coordinator [--dry]    needs fswatch and the configured agent's CLI
+#   katet app build [--dest DIR] [--id BUNDLE_ID]   build and install the macOS app
+# The workspace is --workspace DIR, else $KATET_WORKSPACE, else the nearest folder above the
+# current one that holds katet.conf.
+set -euo pipefail
+HERE="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
+
+args=()
+while (($#)); do
+  case "$1" in
+    --workspace) [[ $# -ge 2 ]] || { echo "--workspace needs a directory" >&2; exit 1; }; export KATET_WORKSPACE="$2"; shift 2 ;;
+    --workspace=*) export KATET_WORKSPACE="${1#*=}"; shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+set -- "${args[@]+"${args[@]}"}"
+cmd="${1:-}"; shift || true
+
+workspace() {
+  if [[ -n "${KATET_WORKSPACE:-}" ]]; then
+    [[ -f "$KATET_WORKSPACE/katet.conf" ]] || { echo "no katet.conf in $KATET_WORKSPACE" >&2; exit 1; }
+    (cd "$KATET_WORKSPACE" && pwd)
+    return
+  fi
+  local d="$PWD"
+  while [[ "$d" != "/" ]]; do
+    [[ -f "$d/katet.conf" ]] && { echo "$d"; return; }
+    d="$(dirname "$d")"
+  done
+  echo "no workspace found: run inside one, pass --workspace DIR, or create one with: katet init DIR" >&2
+  exit 1
+}
+
+case "$cmd" in
+  init)
+    dir="${1:?usage: katet init DIR}"
+    mkdir -p "$dir"/tasks/{open,in-progress,waiting,done} "$dir/plans" "$dir/notes"
+    for st in open in-progress waiting done; do touch "$dir/tasks/$st/.gitkeep"; done
+    [[ -e "$dir/katet.conf" ]] || cat > "$dir/katet.conf" <<CONF
+# katet workspace settings: \`key value\`, one per line; a line's trailing \`  # …\` is a comment.
+port 8765                         # the board's port on 127.0.0.1
+editor zed                        # zed | vscode | cursor | none — the board's "open repo" button
+ticket-url                        # e.g. https://acme.atlassian.net/browse/{key} — links ticket keys like ABC-123
+repo-hint ~/repos/<org>/<repo>    # placeholder shown when adding repos to a task
+CONF
+    import="$HERE/KATET.md"; import="${import/#$HOME/~}"   # home-relative: survives a different user name on another machine
+    [[ -e "$dir/CLAUDE.md" ]] || cat > "$dir/CLAUDE.md" <<MD
+@$import
+
+# This workspace
+
+<!-- what is specific to you: where repos live, the ticket system, commit habits -->
+
+- repos live under \`~/repos/<org>/<repo>\`
+MD
+    [[ -e "$dir/coordinator.tools" ]] || cp "$HERE/coordinator.tools.example" "$dir/coordinator.tools"
+    [[ -e "$dir/.gitignore" ]] || printf '.DS_Store\nlogs/\n.coordinator/\n' > "$dir/.gitignore"
+    if [[ ! -d "$dir/.git" ]]; then
+      if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "note: $dir is inside an existing git repository — not creating a nested one"
+      else
+        git -C "$dir" init -q
+      fi
+    fi
+    echo "workspace ready: $dir"
+    echo "next: cd $dir && katet board      (and: katet coordinator)"
+    ;;
+  board)
+    WS="$(workspace)"; export KATET_WORKSPACE="$WS"
+    exec python3 "$HERE/board/serve.py" "$@"
+    ;;
+  coordinator)
+    WS="$(workspace)"; export KATET_WORKSPACE="$WS"
+    command -v fswatch >/dev/null || { echo "fswatch missing: brew install fswatch" >&2; exit 1; }
+    cd "$WS"
+    exec python3 "$HERE/board/coordinator.py" "$@"
+    ;;
+  app)
+    [[ "${1:-}" == "build" ]] || { echo "usage: katet app build [--dest DIR] [--id BUNDLE_ID]" >&2; exit 1; }
+    shift
+    exec "$HERE/app/build.sh" "$@"
+    ;;
+  *)
+    sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+    exit 1
+    ;;
+esac

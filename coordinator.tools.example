@@ -1,0 +1,105 @@
+# Settings and tools for coordinator workers: headless runs of the coding agent named below.
+# Anything not allowed here is refused without asking. One per line: allow <rule> / deny <rule>,
+# or `<setting> <value>`. Re-read when it changes; a line that cannot be read keeps the last good
+# version and shows on the board. The coordinator adds rule forms for you (`git -C <repo> …`,
+# `mise exec -- …`, absolute tasks/ paths) and its own denies: the workspace's setup files, every
+# `.git/` and `.claude/`, git's `-c`/`--exec-path`/`--output`, branch deletes and moves, `..` in mv.
+
+# --- settings
+agent claude                      # which coding agent runs workers; adapters live in board/agents.py
+ticks yes                         # yes: ticking a Next step / (human) criterion starts a run
+# settings the claude adapter (Claude Code) reads:
+model sonnet                      # worker model; empty = your account default
+effort                            # low | medium | high | xhigh | max; empty = the agent's default
+budget 1.00                       # USD cap per run (--max-budget-usd)
+# a task can pin its own model, effort or budget in its Briefing: `- model: opus`, `- effort: high`
+setting-sources project,local     # skip ~/.claude/settings.json: no user plugins or hooks in workers
+
+# --- allow / deny: in the agent's own permission syntax — below, Claude Code's
+
+# files: agentfiles and the repos from the task's Briefing (passed as --add-dir)
+allow Read
+allow Glob
+allow Grep
+allow Edit
+allow Write
+
+# status moves inside agentfiles (CLAUDE.md: git mv, plain mv when untracked)
+allow Bash(git mv tasks/* tasks/*)
+allow Bash(mv tasks/* tasks/*)
+
+# read-only shell
+allow Bash(cd *)
+allow Bash(git status*)
+allow Bash(git diff*)
+allow Bash(git log*)
+allow Bash(git show*)
+allow Bash(git rev-parse*)
+allow Bash(git ls-files*)
+allow Bash(git blame*)
+allow Bash(git grep *)
+allow Bash(git branch --show-current)
+allow Bash(git branch -a)
+allow Bash(git branch -r)
+allow Bash(git branch -v)
+allow Bash(git branch -vv)
+allow Bash(git branch --list*)
+allow Bash(git branch --contains *)
+allow Bash(git stash list*)
+allow Bash(git stash show*)
+allow Bash(git remote -v)
+allow Bash(git describe*)
+allow Bash(git tag -l*)
+allow Bash(grep *)
+allow Bash(ls)
+allow Bash(ls *)
+allow Bash(head *)
+allow Bash(wc *)
+allow Bash(date*)
+
+# checks that change nothing — examples for a Terraform shop, delete what you don't use
+allow Bash(tofu validate*)
+allow Bash(tofu fmt -check*)
+allow Bash(tofu -chdir=* validate*)
+allow Bash(tofu -chdir=* fmt -check*)
+allow Bash(terraform validate*)
+allow Bash(terraform fmt -check*)
+allow Bash(terraform -chdir=* validate*)
+allow Bash(terraform -chdir=* fmt -check*)
+allow Bash(terragrunt hclfmt --check*)
+allow Bash(tflint)
+allow Bash(tflint --chdir=*)
+allow Bash(shellcheck *)
+allow Bash(yamllint *)
+
+# Jira / Confluence through the Atlassian MCP: reads only — example, delete if you don't use it
+allow mcp__claude_ai_Atlassian_Rovo__getJiraIssue
+allow mcp__claude_ai_Atlassian_Rovo__searchJiraIssuesUsingJql
+allow mcp__claude_ai_Atlassian_Rovo__getJiraIssueRemoteIssueLinks
+allow mcp__claude_ai_Atlassian_Rovo__getConfluencePage
+allow mcp__claude_ai_Atlassian_Rovo__getConfluencePageFooterComments
+allow mcp__claude_ai_Atlassian_Rovo__searchConfluenceUsingCql
+allow mcp__claude_ai_Atlassian_Rovo__search
+allow mcp__claude_ai_Atlassian_Rovo__fetch
+
+# the workspace's own setup (CLAUDE.md, katet.conf, coordinator.tools, .claude/, .coordinator/)
+# and every .git/ are denied by the coordinator itself; add your own files here if needed.
+
+# explicitly refused (dontAsk refuses everything unlisted anyway; these make it visible)
+deny Bash(git commit*)
+deny Bash(git push*)
+deny Bash(git reset*)
+deny Bash(aws *)
+deny Bash(kubectl *)
+deny Bash(brew *)
+deny Bash(rm *)
+# to let workers create issues when you say so in the agentfile, move this line to `allow`
+deny mcp__claude_ai_Atlassian_Rovo__createJiraIssue
+deny mcp__claude_ai_Atlassian_Rovo__editJiraIssue
+deny mcp__claude_ai_Atlassian_Rovo__transitionJiraIssue
+deny mcp__claude_ai_Atlassian_Rovo__addCommentToJiraIssue
+deny mcp__claude_ai_Atlassian_Rovo__addWorklogToJiraIssue
+deny mcp__claude_ai_Atlassian_Rovo__createConfluencePage
+deny mcp__claude_ai_Atlassian_Rovo__updateConfluencePage
+deny mcp__claude_ai_Atlassian_Rovo__createConfluenceFooterComment
+deny mcp__claude_ai_Atlassian_Rovo__createConfluenceInlineComment
