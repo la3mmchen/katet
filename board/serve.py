@@ -290,14 +290,6 @@ def append_message(lines, who, text):
     lines[last:end] = ["", *msg, ""]       # one blank line before the message and before the next section
 
 
-def clear_chat(lines):
-    """Empty ## Chat, keeping the template's guidance comment."""
-    start, end = chat_range(lines)
-    body = "\n".join(lines[start + 1:end])
-    m = re.match(r"\s*(<!--.*?-->)", body, re.S)
-    lines[start + 1:end] = (["", *m.group(1).split("\n")] if m else []) + [""]
-
-
 def set_field(lines, name, value):
     """Rewrite the first `**name:** …` line (the Briefing's)."""
     for i, l in enumerate(lines):
@@ -698,8 +690,6 @@ def edit(body):
         if len(re.findall(r"^\s*```", text, re.M)) % 2:
             raise ValueError("unclosed ``` code block")
         append_message(lines, "you", text)
-    elif op == "clear-chat":
-        clear_chat(lines)
     elif op == "field":
         # a worker setting for this task alone, as a Briefing field: `- model: opus`; empty value removes it
         name, value = str(body.get("name", "")), " ".join(str(body.get("value", "")).split())

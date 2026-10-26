@@ -415,6 +415,11 @@ aside.drawer.on { transform: none; }
 .q .agent-turn { font-size: 11px; font-weight: 600; color: var(--prog); background: var(--prog-soft); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
 .linkbtn.danger { color: var(--p1); margin-left: 4px; }
 .linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; }
+.chatref { flex: none; margin-left: auto; border: 0; background: none; padding: 2px; color: var(--ink-3); opacity: .5; cursor: pointer; line-height: 0; border-radius: 4px; }
+.chatref svg { width: 14px; height: 14px; }
+.chatref:hover, .chatref:focus-visible { opacity: 1; color: var(--accent); background: var(--accent-soft); }
+.steps li .chatref { margin-top: 3px; }
+.q .qh .chatref { align-self: center; }
 .steps .box.tick { cursor: pointer; transition: border-color .1s, background .1s; }
 .steps .box.tick:hover { border-color: var(--done); background: var(--done-soft); }
 .steps li.done .box.tick:hover { filter: brightness(1.1); background: var(--done); }
@@ -479,6 +484,7 @@ a.idref:hover { text-decoration: underline; }
 .msgs .older:hover { border-color: var(--accent); color: var(--accent); }
 .cstate { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); margin: 8px 0 4px; }
 .cstate.busy { color: var(--prog); font-weight: 550; }
+/* composer: chat and answer boxes stay low until you are in them, then open up and grow with the text */
 .composer textarea { min-height: 54px !important; font-family: inherit !important; font-size: 13.5px !important; transition: min-height .15s ease; }
 .composer textarea:focus { min-height: 150px !important; }   /* room to write once you are in it; grows further with the text */
 .instr-box { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 8px 14px 10px; }
@@ -554,6 +560,13 @@ a.idref:hover { text-decoration: underline; }
 .locked textarea:disabled, .locked input:disabled, .locked select:disabled, .locked button:disabled { opacity: .55; cursor: not-allowed; }
 .locked .tick[aria-disabled="true"] { opacity: .45; pointer-events: none; }
 .locked .holdsw { opacity: .55; pointer-events: none; }
+/* a worker is on the task: the whole window goes gray so it reads as "not yours right now";
+   the lock note and the close button stay at full strength, reading and copying still work */
+aside.drawer.working { background: color-mix(in srgb, var(--panel) 92%, var(--ink-3)); }
+aside.drawer.working .dh > .row > :not(.actions), aside.drawer.working .dh > .row .actions > .btn:not([data-close]),
+aside.drawer.working .dh > h1, aside.drawer.working .dh > .path, aside.drawer.working .dh > .dtabs,
+aside.drawer.working .dh > .jump, aside.drawer.working .workerpick,
+aside.drawer.working .db { filter: grayscale(.85); opacity: .62; transition: opacity .2s, filter .2s; }
 .workerpick select { font: inherit; font-size: 12px; color: var(--ink-2); background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 4px; }
 .holdsw { cursor: pointer; user-select: none; }
 .holdsw input { position: absolute; opacity: 0; pointer-events: none; }
@@ -682,7 +695,10 @@ const ICON = {
   x: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 5 10 10M15 5 5 15"/></svg>',
   prompt: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 7 3 3-3 3M10 14h5"/><rect x="2" y="3" width="16" height="14" rx="2.5"/></svg>',
   edit: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16h3l8.5-8.5-3-3L4 13z"/></svg>',
+  chat: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3.5 4.5h13v8.5h-7L6 16v-3H3.5z"/></svg>',
 };
+/* the "mention in chat" link next to an S/A/Q id: opens the chat with "For S3: " typed for you */
+const chatRef = (t, id) => t ? `<button class="chatref" data-chat-about="${esc(id)}" data-slug="${esc(t.slug)}" title="Write about ${esc(id)} in the chat">${ICON.chat}</button>` : '';
 const STATE = {
   'open':        { label: 'Open',        color: 'var(--open)', soft: 'var(--open-soft)', hint: 'not started' },
   'in-progress': { label: 'In progress', color: 'var(--prog)', soft: 'var(--prog-soft)', hint: 'agent’s turn' },
@@ -926,7 +942,7 @@ function qBlock(q, t) {
   return `<div class="q ${cls}" id="item-${esc(q.id)}">
     <div class="qh"><span class="qid">${esc(q.id)}</span><span class="qt">${inl(q.text)}</span>
       ${!q.done && q.answer ? '<span class="agent-turn" title="Answered — the agent acts on it next time it touches the task">agent’s turn</span>' : ''}
-      ${q.asked ? `<span class="asked">asked ${rel(q.asked)}</span>` : ''}</div>
+      ${q.asked ? `<span class="asked">asked ${rel(q.asked)}</span>` : ''}${chatRef(t, q.id)}</div>
     ${q.notes.length ? `<div class="notes">${q.notes.map(n => `<p>${inl(n)}</p>`).join('')}</div>` : ''}
     ${(q.answer && !form) || q.outcome ? `<dl class="ans">
       ${q.answer && !form ? `<dt>Answer</dt><dd>${inl(q.answer)}
@@ -934,7 +950,7 @@ function qBlock(q, t) {
       ${q.outcome ? `<dt>Outcome</dt><dd>${inl(q.outcome)}
         ${q.answer ? ` <button class="linkbtn danger" data-clear-outcome="${esc(t.slug)}" data-qid="${esc(q.id)}"
             title="Empties the Outcome line and unticks ${esc(q.id)}, so the agent acts on your answer again">clear outcome</button>` : ''}</dd>` : ''}</dl>` : ''}
-    ${form ? `<div class="answer-form">
+    ${form ? `<div class="answer-form composer">
       <textarea data-draft="${esc(key)}" placeholder="Your answer — written to the **Answer:** line">${esc(drafts[key] ?? q.answer)}</textarea>
       <div class="row"><small>⌘↵ to save · one line in the file</small>
         ${q.answer ? `<button class="btn" data-cancel-answer="${esc(key)}">Cancel</button>` : ''}
@@ -962,6 +978,7 @@ function stepList(items, numbered, t, section) {
         : `<span class="box" ${t ? 'title="Agents tick this after running the check"' : ''}></span>`}
       <div class="txt">${inl(s.text.replace(SID, '').replace('*(human)*', ''))}${s.human ? '<span class="tag-h">human</span>' : ''}
         ${s.body ? `<div class="more md">${block(s.body, true)}</div>` : ''}</div>
+      ${sid(s) ? chatRef(t, sid(s)) : ''}
     </li>`; }).join('')}</ul>`;
 }
 
@@ -1132,7 +1149,7 @@ function workerPick(t) {
 }
 function lockNote(t) {
   const w = coord && coord.alive && coord.worker;
-  if (w && w.slug === t.slug) return `<div class="locknote busy">${ICON.prompt}<span>A worker is editing this task right now${w.lastActivity ? ' — ' + esc(w.lastActivity.tool) : ''}. Edits you make may be refused until it is done.</span></div>`;
+  if (w && w.slug === t.slug) return `<div class="locknote busy">${ICON.prompt}<span>A worker is editing this task right now. Edits you make may be refused until it is done.</span></div>`;
   const held = onHold(t.slug);
   return `<label class="locknote holdsw" title="Kept in the workspace (.coordinator/holds.json): stays on when the card is closed, shown on every board">
     <input type="checkbox" data-hold ${held ? 'checked' : ''}><span class="sw"></span>
@@ -1192,14 +1209,14 @@ async function createTask(btn) {
 function lockInputs(root) {
   root.classList.add('locked');
   root.querySelectorAll('textarea, input, select').forEach(el => { el.disabled = true; });
-  root.querySelectorAll('button:not([data-close]):not([data-copy]):not([data-copy-code]):not([data-expand]):not([data-chat-all]):not([data-jump])')
+  root.querySelectorAll('button:not([data-close]):not([data-copy]):not([data-copy-code]):not([data-expand]):not([data-chat-all]):not([data-jump]):not([data-chat-about])')
     .forEach(el => { el.disabled = true; });
   root.querySelectorAll('.tick').forEach(el => { el.setAttribute('aria-disabled', 'true'); el.tabIndex = -1; });
 }
 
 async function renderDrawer() {
   const dr = $('#drawer'), scrim = $('#scrim');
-  if (ui.task === '__new__') { renderNewForm(dr); dr.classList.add('on'); scrim.classList.add('on'); dr.setAttribute('aria-hidden', 'false'); return; }
+  if (ui.task === '__new__') { renderNewForm(dr); dr.classList.remove('working'); dr.classList.add('on'); scrim.classList.add('on'); dr.setAttribute('aria-hidden', 'false'); return; }
   const t = ui.task && data.tasks.find(x => x.slug === ui.task);
   if (!t) { dr.classList.remove('on'); scrim.classList.remove('on'); dr.setAttribute('aria-hidden', 'true'); return; }
   const files = fileTabs(t);
@@ -1255,6 +1272,7 @@ async function renderDrawer() {
     decorateMd(body);
   }
   body.scrollTop = scroll;
+  dr.classList.toggle('working', beingWorked(t));   // whole window grayed while a worker edits the task
   dr.classList.add('on'); scrim.classList.add('on'); dr.setAttribute('aria-hidden', 'false');
 }
 function prettyJson(s) { try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } }
@@ -1293,7 +1311,6 @@ function chatBlock(t) {
     <div class="answer-form wide composer">
       <textarea data-draft="${esc(key)}" rows="${Math.min(14, Math.max(2, String(drafts[key] ?? '').split('\n').length + 1))}" placeholder="Message the agent — a question, an update, the next prompt (markdown)">${esc(drafts[key] ?? '')}</textarea>
       <div class="row"><small>⌘↵ to send · appended to <code>## Chat</code></small>
-        ${msgs.length ? `<button class="btn" data-clear-chat="${esc(t.slug)}" title="Empty ## Chat — for when a topic is done">${ICON.x}Clear</button>` : ''}
         <button class="btn primary" data-send-chat="${esc(t.slug)}">Send</button></div>
     </div>
     ${chatState(t)}
@@ -1535,12 +1552,25 @@ function renderSettings() {
   </div>`;
 }
 
+/* "For S3: " into the task's chat draft (on its own line if you already typed something), then the
+   drawer opens on the chat with the caret at the end. Works from the inbox too. */
+let focusAfter = null;   // data-draft key to focus once the next render is done, caret at the end
+function mentionInChat(slug, id) {
+  const t = data.tasks.find(x => x.slug === slug);
+  if (!t) return;
+  const key = t.file + '#chat', cur = String(drafts[key] ?? '');
+  drafts[key] = (cur.trim() ? cur.replace(/\s*$/, '\n') : '') + `For ${id}: `;
+  persistDrafts();
+  ui.task = slug; ui.tab = 'overview'; focusAfter = key;
+  render();
+}
+
 function render() {
   if (!data) return;
   persistDrafts();
   syncViewing();
-  const f = document.activeElement;
-  const focusKey = f && f.dataset && f.dataset.draft, sel = focusKey && [f.selectionStart, f.selectionEnd];
+  const f = document.activeElement, want = focusAfter; focusAfter = null;
+  const focusKey = want || (f && f.dataset && f.dataset.draft), sel = !want && focusKey && [f.selectionStart, f.selectionEnd];
   ui.folds = new Set([...document.querySelectorAll('details[data-fold][open]')].map(d => d.dataset.fold));
   renderPending = false;
   writeHash();
@@ -1556,7 +1586,14 @@ function render() {
   renderDrawer().then(() => {
     if (!focusKey) return;
     const el = document.querySelector(`[data-draft="${CSS.escape(focusKey)}"]`);
-    if (el) { el.focus(); el.setSelectionRange(...sel); }
+    if (!el) return;
+    el.focus({ preventScroll: true });   // only the drawer body scrolls, like the jump bar; never the ancestors
+    if (sel) el.setSelectionRange(...sel);
+    else {
+      el.setSelectionRange(el.value.length, el.value.length);
+      const db = el.closest('.db'), sec = el.closest('section') || el;
+      if (db) db.scrollTo({ top: sec.offsetTop - 10 });
+    }
   });
 }
 
@@ -1681,6 +1718,8 @@ document.addEventListener('click', e => {
   if (ca) { const sl = ca.dataset.chatAll; if (ui.chatAll.has(sl)) ui.chatAll.delete(sl); else ui.chatAll.add(sl); render(); return; }
   const ex = e.target.closest('[data-expand]');
   if (ex) { const id = ex.dataset.expand; if (ui.expanded.has(id)) ui.expanded.delete(id); else ui.expanded.add(id); render(); return; }
+  const cr = e.target.closest('[data-chat-about]');
+  if (cr) { mentionInChat(cr.dataset.slug, cr.dataset.chatAbout); return; }
   const jp = e.target.closest('[data-jump]');
   if (jp) {
     const db = $('#drawer .db'), el = db && db.querySelector('#' + jp.dataset.jump);
@@ -1711,19 +1750,13 @@ document.addEventListener('click', e => {
     setTimeout(() => { cc.classList.remove('ok'); cc.lastChild.textContent = 'Copy'; }, 1200);
     return;
   }
-  const w = e.target.closest('[data-save-answer],[data-edit-answer],[data-cancel-answer],[data-tick],[data-clear-outcome],[data-send-chat],[data-clear-chat],[data-accept]');
+  const w = e.target.closest('[data-save-answer],[data-edit-answer],[data-cancel-answer],[data-tick],[data-clear-outcome],[data-send-chat],[data-accept]');
   if (w) {
     if (w.dataset.sendChat) return sendChat(w);
     if (w.dataset.accept) {
       const t = data.tasks.find(x => x.slug === w.dataset.accept);
       if (!t || !confirm(`Accept “${t.title}” as done?\nStatus becomes done and the file moves to tasks/done/.`)) return;
       write(t, { op: 'accept' }).then(ok => { if (ok) { toast('Accepted — moved to done'); render(); } });
-      return;
-    }
-    if (w.dataset.clearChat) {
-      const t = data.tasks.find(x => x.slug === w.dataset.clearChat);
-      if (!t || !confirm('Clear the chat in this agentfile? (it stays in git history)')) return;
-      write(t, { op: 'clear-chat' }).then(ok => { if (ok) { toast('Chat cleared'); render(); } });
       return;
     }
     if (w.dataset.clearOutcome) return clearOutcome(w);
