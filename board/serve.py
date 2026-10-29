@@ -290,6 +290,33 @@ def append_message(lines, who, text):
     lines[last:end] = ["", *msg, ""]       # one blank line before the message and before the next section
 
 
+ANSWER_STEP = re.compile(r"^\*\*S\d+\*\*\s*(?:answer|reply to|respond to|decide)\s+(.*)$", re.I)
+QREF = re.compile(r"\bQ(\d+)(?:\s*[–—-]\s*Q?(\d+))?")
+
+
+def tick_answer_steps(lines):
+    """Next steps that only ask for answers ("**S1** Answer Q1–Q3 (…)") are ticked once every
+    question they name has an Answer — a leftover habit; open questions are the human's list already.
+    A step with a second action ("…, then tell the agent") is left alone. Returns the ids ticked."""
+    sec = sections("\n".join(lines))
+    answered = {q["id"] for q in questions(sec.get("Open questions", [])) if q["answer"]}
+    ticked = []
+    for it in checklist(sec.get("Next steps", [])):
+        m = None if it["done"] else ANSWER_STEP.match(it["text"])
+        if not m:
+            continue
+        rest, refs = m.group(1), set()
+        for a, b in QREF.findall(rest):
+            lo, hi = sorted((int(a), int(b or a)))
+            refs.update(f"Q{n}" for n in range(lo, hi + 1))
+        tail = re.sub(r"\bQ\d+(\s*[–—-]\s*Q?\d+)?|\b(and|or)\b|[,&]", "", rest).strip()
+        if not refs or not refs <= answered or not re.match(r"^(\(.*\)|so\b.*|above\b.*|[—–-]\s.*)?$", tail, re.S):
+            continue
+        lines[it["line"]] = re.sub(r"^- \[ \]", "- [x]", lines[it["line"]], count=1)
+        ticked.append(it["text"].split("**")[1])
+    return ticked
+
+
 def set_field(lines, name, value):
     """Rewrite the first `**name:** …` line (the Briefing's)."""
     for i, l in enumerate(lines):
@@ -671,6 +698,7 @@ def edit(body):
         else:
             at = q["outcomeLine"] if q["outcomeLine"] is not None else q["lastLine"] + 1
             lines.insert(at, f"  **Answer:** {answer}".rstrip())
+        tick_answer_steps(lines)   # "**S1** Answer Q1–Q3" steps close themselves once their answers are in
     elif op == "clear-outcome":
         # empties the Outcome line and unticks the question: it is open again for the agent
         q = next((q for q in questions(sec.get("Open questions", [])) if q["id"] == body["qid"]), None)
@@ -720,7 +748,7 @@ def edit(body):
         if it["text"] != body.get("text"):
             raise Conflict("the item moved or changed")
         if section == "Acceptance criteria" and not it["human"]:
-            raise ValueError("only *(human)* acceptance criteria are ticked by hand; agents tick the rest after the check")
+            raise ValueError("only *(human)* acceptance criteria are ticked by hand; workers tick the rest after the check")
         mark = "x" if body.get("done") else " "
         lines[it["line"]] = re.sub(r"^- \[[ xX]\]", f"- [{mark}]", lines[it["line"]], count=1)
     else:

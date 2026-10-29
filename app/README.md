@@ -20,7 +20,7 @@ katet app build      # builds and installs ~/Applications/katet.app (opens any w
 - **Menu-bar icon:** the `k` mark. A dot and a number appear when something needs you (stuck or
   looping tasks, `coordinator.tools` not readable); `…` while a worker runs; dimmed when no
   coordinator runs. Brand sources: `assets/brand/`, built files: `app/icon/`.
-- **Notifications:** an agent replied, a new question or step for you, a task stuck in
+- **Notifications:** a worker replied, a new question or step for you, a task stuck in
   in-progress, a possible worker loop, `coordinator.tools` not readable. Clicking one opens the task.
 - **Logs:** `.coordinator/coordinator.out` (coordinator started by the app), `.coordinator/board.out`
   (board server started by the app).

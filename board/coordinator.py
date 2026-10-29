@@ -63,6 +63,12 @@ Nobody reads this chat. Everything the human needs goes into the agentfile, foll
 - never commit, push, call AWS or kubectl, or install anything — write those as Next steps for
   the human instead (a commit step names repo and files, then the subject and the message as two
   separate fenced blocks, see CLAUDE.md);
+- a Next step is one action in one plain line with at most one check: nothing about what failed
+  or was tried, no parentheses pointing at earlier attempts, no "(…, S9)" — that story is a line
+  in Agent logs. Two checks are two steps;
+- every run, re-read the open Next steps: drop "before Sn" notes whose Sn is ticked, and check
+  steps the human may have done in passing (git log, ls, a read) — tick them with the evidence in
+  Agent logs instead of writing "if pushed";
 - writes to outside systems (a ticket tracker, a wiki) only when the human asked for that exact
   write in this agentfile — in an Answer, a chat message or a ticked step — never on your own
   judgement, and the allow-list is the limit, not the invitation. Before creating, search for an

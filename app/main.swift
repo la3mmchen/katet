@@ -5,7 +5,7 @@
 //   to `open -a katet DIR`, or chosen in the Workspace menu; remembered in the app's preferences.
 // - Uses a running board server on the workspace's port (katet.conf), or starts one (stopped again on quit).
 // - Starts the coordinator if none runs, detached: it keeps running after the app quits.
-// - Polls /api/tasks and /api/coordinator; notifies on agent replies, new questions or steps for
+// - Polls /api/tasks and /api/coordinator; notifies on worker replies, new questions or steps for
 //   you, stuck tasks, a possible worker loop, and a coordinator.tools it cannot read.
 
 import Cocoa
@@ -336,7 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             guard let before = previous?[slug] else { continue }
             let title = (t["title"] as? String) ?? slug
             if !reply.isEmpty && reply != before.reply, let text = lastAgent?["text"] as? String {
-                notify("Agent replied — \(title)", String(text.prefix(180)), slug: slug)
+                notify("Worker replied — \(title)", String(text.prefix(180)), slug: slug)
             }
             if qs.count > before.questions, let q = qs.last {
                 notify("Question for you — \(title)", "\(q["id"] ?? ""): \(q["text"] ?? "")", slug: slug)
@@ -525,7 +525,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let m = NSMenu()
         m.addItem(withTitle: workspace.isEmpty ? "No workspace open" : "Workspace: " + (workspace as NSString).lastPathComponent, action: nil, keyEquivalent: "").isEnabled = false
         m.addItem(withTitle: state, action: nil, keyEquivalent: "").isEnabled = false
-        if replies > 0 { m.addItem(withTitle: "\(replies) chat message\(replies == 1 ? "" : "s") waiting for an agent", action: nil, keyEquivalent: "").isEnabled = false }
+        if replies > 0 { m.addItem(withTitle: "\(replies) chat message\(replies == 1 ? "" : "s") waiting for a worker", action: nil, keyEquivalent: "").isEnabled = false }
         if stuck > 0 { m.addItem(withTitle: "\(stuck) task\(stuck == 1 ? "" : "s") stuck in in-progress", action: #selector(openCoordinator), keyEquivalent: "").target = self }
         if loop > 0 { m.addItem(withTitle: "\(loop) task\(loop == 1 ? "" : "s") held — possible loop", action: #selector(openCoordinator), keyEquivalent: "").target = self }
         if let e = configError { m.addItem(withTitle: "Settings not read: \(e.prefix(70))", action: #selector(openCoordinator), keyEquivalent: "").target = self }

@@ -121,6 +121,23 @@ workspace's own `CLAUDE.md`, below the line that imports this file.
   reordered. The board shows items sorted by number, so the number is the order: a new item
   gets the next number and goes at the end; if it must happen before an existing item, say so in
   its text ("before S8: …"). Reference items as "S4" from logs, questions and chat.
+  No step for answering a question (`Answer Q3`): open questions are the human's list already and
+  the board shows them; a step that depends on an answer says so in its text ("after Q3: …"). Older
+  steps of that kind are ticked by the board itself once the answers are saved.
+  A step never carries what failed or was tried, no "(local validate fails on AssumeRole, S9)",
+  and at most one check. Not this:
+  ```text
+  - [ ] **S11** Verify the units on the Draft MR (local validate fails on AssumeRole, S9) — check: the plan job shows an Amplify app + branch each for variant-a/ and variant-b/; check meta passes the name validation
+  ```
+  but this, with the failed local validate as a line in Agent logs:
+  ```text
+  - [ ] **S11** Check the Draft MR's plan job: one Amplify app and branch each for `variant-a/` and `variant-b/`
+  - [ ] **S12** Check the plan job's meta output: `variant-a` passes the meta module's name validation
+  ```
+  Open steps are kept true every time the task is touched: a "before S6: …" note goes when S6 is
+  ticked, and a step whose work may already be done (the human pushed, ran, created it in passing)
+  is checked with the read-only tools — `git log`, `ls`, a read of the page — and ticked with the
+  evidence in Agent logs, never carried along with "if pushed".
 - Anything the human is meant to run or paste — commands, queries, config — goes in a
   fenced block with a language tag (` ```bash `, ` ```sql `, ` ```yaml `; ` ```text ` if
   none fits), never inline backticks or bare text. Under a list item (Next steps), indent

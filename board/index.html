@@ -116,6 +116,20 @@
     --code-bg: #f2f2f2; --on-fill: #ffffff;
     color-scheme: light;
 }
+:root[data-theme="mono"] {
+    /* pure black and white: no colour anywhere, states told apart by text, dots and shade */
+    --bg: #ffffff; --panel: #ffffff; --panel-2: #f4f4f4; --line: #000000; --line-2: #000000;
+    --ink: #000000; --ink-2: #222222; --ink-3: #555555;
+    --accent: #000000; --accent-soft: #e6e6e6;
+    --open: #000000; --open-soft: #f4f4f4;
+    --prog: #000000; --prog-soft: #e6e6e6;
+    --wait: #000000; --wait-soft: #f4f4f4; --wait-line: #000000;
+    --done: #000000; --done-soft: #e6e6e6;
+    --p1: #000000; --p1-soft: #e6e6e6; --p2: #000000; --p2-soft: #f4f4f4; --p3: #000000; --p3-soft: #f4f4f4;
+    --shadow: none; --shadow-lg: 0 0 0 2px #000000;
+    --code-bg: #f4f4f4; --on-fill: #ffffff;
+    color-scheme: light;
+}
 :root[data-theme="katet"] {
     /* the brand: ink, paper, amber */
     --bg: #e6e9ee; --panel: #ffffff; --panel-2: #f1f3f6; --line: #c6cbd3; --line-2: #a9b0bb;
@@ -480,7 +494,8 @@ a.idref:hover { text-decoration: underline; }
 .msg.you .md.clamp::after { background: linear-gradient(to bottom, transparent, var(--accent-soft)); }
 .msg .more { display: inline-block; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .msg .more:hover { text-decoration: underline; }
-.msgs .older { align-self: center; margin: 6px 0 2px; padding: 4px 10px; border: 1px dashed var(--line-2); border-radius: 99px; background: none; color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer; }
+.col .older { display: block; margin: 8px auto 0; }
+.msgs .older, .col .older { align-self: center; margin: 6px 0 2px; padding: 4px 10px; border: 1px dashed var(--line-2); border-radius: 99px; background: none; color: var(--ink-2); font: inherit; font-size: 12px; cursor: pointer; }
 .msgs .older:hover { border-color: var(--accent); color: var(--accent); }
 .cstate { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); margin: 8px 0 4px; }
 .cstate.busy { color: var(--prog); font-weight: 550; }
@@ -701,9 +716,9 @@ const ICON = {
 const chatRef = (t, id) => t ? `<button class="chatref" data-chat-about="${esc(id)}" data-slug="${esc(t.slug)}" title="Write about ${esc(id)} in the chat">${ICON.chat}</button>` : '';
 const STATE = {
   'open':        { label: 'Open',        color: 'var(--open)', soft: 'var(--open-soft)', hint: 'not started' },
-  'in-progress': { label: 'In progress', color: 'var(--prog)', soft: 'var(--prog-soft)', hint: 'agent’s turn' },
+  'in-progress': { label: 'In progress', color: 'var(--prog)', soft: 'var(--prog-soft)', hint: 'worker’s turn' },
   'waiting':     { label: 'Waiting',     color: 'var(--wait)', soft: 'var(--wait-soft)', hint: 'your turn' },
-  'active':      { label: 'Active',      color: 'var(--wait)', soft: 'var(--wait-soft)', hint: 'waiting on you, or an agent at work' },
+  'active':      { label: 'Active',      color: 'var(--wait)', soft: 'var(--wait-soft)', hint: 'waiting on you, or a worker at work' },
   'review':      { label: 'Review',      color: 'var(--accent)', soft: 'var(--accent-soft)', hint: 'your turn · verify' },
   'done':        { label: 'Done',        color: 'var(--done)', soft: 'var(--done-soft)', hint: '' },
 };
@@ -724,8 +739,9 @@ const kindChip = k => k === 'review' ? '<span class="kind review">check</span>'
   : k ? `<span class="kind ${k}" title="${WAIT_KIND[k].title}">${WAIT_KIND[k].label}</span>` : '';
 
 let data = null, etag = null;
-const ui = { view: 'board', task: null, tab: 'overview', filter: '', expanded: new Set(), chatAll: new Set() };   // expanded: long chat messages opened; chatAll: tasks showing their whole chat
+const ui = { view: 'board', task: null, tab: 'overview', filter: '', expanded: new Set(), chatAll: new Set(), doneAll: false };   // expanded: long chat messages opened; chatAll: tasks showing their whole chat
 const CHAT_SHOWN = 4;   // messages shown by default; older ones fold away behind a button
+const DONE_SHOWN = 5;   // done tasks shown on the board by default; the rest behind a button
 let coord = null, coordJson = '';
 let settings = null, settingsJson = '';
 async function fetchSettings() {
@@ -744,11 +760,13 @@ function persistDrafts() {
 const editing = new Set();  // answered questions reopened for editing
 const busy = new Set();     // "file#section#idx" ticks in flight
 let renderPending = false;
-// steps ticked in this page session stay in place (struck through) so a wrong click is one click to undo;
-// keyed by slug + text, which survive the file moving folders or lines shifting
-const justTicked = new Set();
+// a step you tick stays in place (struck through) for a moment so a wrong click is one click to undo,
+// then folds into Done; keyed by slug + text, which survive the file moving folders or lines shifting
+const TICK_LINGER = 20000;
+const justTicked = new Map();   // key -> time of the tick
 const tickKey = (t, section, s) => `${t.slug}#${section}#${s.text}`;
-const shownSteps = t => t.nextSteps.filter(s => !s.done || justTicked.has(tickKey(t, 'Next steps', s)));
+const recentTick = k => justTicked.has(k) && Date.now() - justTicked.get(k) < TICK_LINGER;
+const shownSteps = t => t.nextSteps.filter(s => !s.done || recentTick(tickKey(t, 'Next steps', s)));
 
 /* ---------- helpers ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -861,10 +879,10 @@ function card(t) {
       ${t.mismatch && !beingWorked(t) ? `<span class="chip bad" title="Status line says “${esc(t.state)}”, folder is “${esc(t.folder)}”">status ≠ folder</span>` : ''}
       ${coord && coord.stuck && coord.stuck[t.slug] && t.folder === 'in-progress' ? `<span class="chip bad" title="A coordinator worker ended but left this task in in-progress. Until it moves on, your edits here are skipped — see the Coordinator tab.">stuck</span>` : ''}
       ${coord && coord.loop && coord.loop[t.slug] ? `<span class="chip bad" title="Held: ${coord.loop[t.slug].runs} runs in a row were started by changes made while its worker ran — see the Coordinator tab, then act on the task to continue">loop?</span>` : ''}
-      ${t.folder === 'in-progress' && !(coord && coord.stuck && coord.stuck[t.slug]) ? '<span class="chip working agentwork" title="In progress: an agent is working on it right now (coordinator worker or a session)"><i class="cdot busy"></i>agent working</span>' : ''}
+      ${t.folder === 'in-progress' && !(coord && coord.stuck && coord.stuck[t.slug]) ? '<span class="chip working agentwork" title="In progress: a worker is on it right now — the coordinator’s, or a session you run yourself"><i class="cdot busy"></i>worker busy</span>' : ''}
       ${coord && coord.alive && coord.worker && coord.worker.slug === t.slug && t.folder !== 'in-progress' ? `<span class="chip working" title="A coordinator worker is on this task">${ICON.prompt}worker</span>` : ''}
-      ${t.chatKey && t.folder !== 'done' ? '<span class="chip instr" title="Your chat message waits for a reply">💬 waiting for agent</span>'
-        : unseenReply(t) ? '<span class="chip reply" title="The agent replied in the chat — open the task to read it">💬 new reply</span>' : ''}
+      ${t.chatKey && t.folder !== 'done' ? '<span class="chip instr" title="Your chat message waits for a reply">💬 waiting for worker</span>'
+        : unseenReply(t) ? '<span class="chip reply" title="The worker replied in the chat — open the task to read it">💬 new reply</span>' : ''}
       ${isStale(t) ? `<span class="chip stale" title="Waiting and untouched for ${daysAgo(t.updated)} days">stale</span>` : ''}
       <span class="when" title="Last touched ${esc(fmtTime(t.touched))}${t.updated ? ' · Updated line: ' + esc(t.updated + (t.updatedTime ? ' ' + t.updatedTime : '')) : ''}">${ago(t.touched)}</span>
     </div>
@@ -922,14 +940,17 @@ function renderBoard() {
     ...data.stray.map(f => `<code>${esc(f)}</code> sits directly in <code>tasks/</code>, not in a state folder`),
     ...data.tasks.filter(t => t.mismatch && !beingWorked(t)).map(t => `<code>${esc(t.file)}</code>: Status says <b>${esc(t.state)}</b>, folder says <b>${esc(t.folder)}</b>`),
   ];
+  // done: the last few only, the rest behind a button (a filter shows every match)
+  const shown = s => { const all = by[s].sort(order); return s === 'done' && !ui.filter && !ui.doneAll ? all.slice(0, DONE_SHOWN) : all; };
   return `
     ${warn.length ? `<div class="warn">⚠︎ ${warn.join('<br>')}</div>` : ''}
     <div class="board" style="grid-template-columns:${colTemplate(by)}">${COLUMNS.map(([s]) => `
       <div class="col ${s} ${by[s].length < 2 ? 'slim' : ''}">
         <h2><span class="dot" style="background:${STATE[s].color}"></span>${STATE[s].label}
           <span class="c">${by[s].length}</span><span class="hint">${sub[s] || STATE[s].hint}</span></h2>
-        <div class="cards">${by[s].sort(order).map(card).join('') ||
+        <div class="cards">${shown(s).map(card).join('') ||
           `<div class="empty">${ui.filter ? 'no match' : 'nothing here'}</div>`}</div>
+        ${s === 'done' && !ui.filter && by[s].length > DONE_SHOWN ? `<button class="more older" data-done-all>${ui.doneAll ? `Show only the last ${DONE_SHOWN}` : `Show ${by[s].length - DONE_SHOWN} more`}</button>` : ''}
       </div>`).join('')}
     </div>`;
 }
@@ -941,7 +962,7 @@ function qBlock(q, t) {
   const cls = q.done ? 'closed' : q.answer ? 'answered' : 'pending';
   return `<div class="q ${cls}" id="item-${esc(q.id)}">
     <div class="qh"><span class="qid">${esc(q.id)}</span><span class="qt">${inl(q.text)}</span>
-      ${!q.done && q.answer ? '<span class="agent-turn" title="Answered — the agent acts on it next time it touches the task">agent’s turn</span>' : ''}
+      ${!q.done && q.answer ? '<span class="agent-turn" title="Answered — the worker acts on it next time it touches the task">worker’s turn</span>' : ''}
       ${q.asked ? `<span class="asked">asked ${rel(q.asked)}</span>` : ''}${chatRef(t, q.id)}</div>
     ${q.notes.length ? `<div class="notes">${q.notes.map(n => `<p>${inl(n)}</p>`).join('')}</div>` : ''}
     ${(q.answer && !form) || q.outcome ? `<dl class="ans">
@@ -949,7 +970,7 @@ function qBlock(q, t) {
         ${!q.done ? ` <button class="linkbtn" data-edit-answer="${esc(key)}">edit</button>` : ''}</dd>` : ''}
       ${q.outcome ? `<dt>Outcome</dt><dd>${inl(q.outcome)}
         ${q.answer ? ` <button class="linkbtn danger" data-clear-outcome="${esc(t.slug)}" data-qid="${esc(q.id)}"
-            title="Empties the Outcome line and unticks ${esc(q.id)}, so the agent acts on your answer again">clear outcome</button>` : ''}</dd>` : ''}</dl>` : ''}
+            title="Empties the Outcome line and unticks ${esc(q.id)}, so the worker acts on your answer again">clear outcome</button>` : ''}</dd>` : ''}</dl>` : ''}
     ${form ? `<div class="answer-form composer">
       <textarea data-draft="${esc(key)}" placeholder="Your answer — written to the **Answer:** line">${esc(drafts[key] ?? q.answer)}</textarea>
       <div class="row"><small>⌘↵ to save · one line in the file</small>
@@ -971,11 +992,11 @@ function stepList(items, numbered, t, section) {
     const can = t && (section === 'Next steps' || s.human);
     const key = t && `${t.file}#${section}#${s.idx}`;
     return `
-    <li ${sid(s) ? `id="item-${sid(s)}"` : ''} class="${s.done ? 'done' : ''} ${t && justTicked.has(tickKey(t, section, s)) ? 'recent' : ''} ${key && busy.has(key) ? 'busy' : ''}">
+    <li ${sid(s) ? `id="item-${sid(s)}"` : ''} class="${s.done ? 'done' : ''} ${t && recentTick(tickKey(t, section, s)) ? 'recent' : ''} ${key && busy.has(key) ? 'busy' : ''}">
       ${sid(s) ? `<span class="n sid">${sid(s)}</span>` : numbered ? `<span class="n">${i + 1}</span>` : ''}${can
         ? `<span class="box tick" role="checkbox" aria-checked="${s.done}" tabindex="0" title="${s.done ? 'Untick' : 'Tick'} in the file"
              data-tick="${esc(t.slug)}" data-section="${esc(section)}" data-idx="${s.idx}"></span>`
-        : `<span class="box" ${t ? 'title="Agents tick this after running the check"' : ''}></span>`}
+        : `<span class="box" ${t ? 'title="Workers tick this after running the check"' : ''}></span>`}
       <div class="txt">${inl(s.text.replace(SID, '').replace('*(human)*', ''))}${s.human ? '<span class="tag-h">human</span>' : ''}
         ${s.body ? `<div class="more md">${block(s.body, true)}</div>` : ''}</div>
       ${sid(s) ? chatRef(t, sid(s)) : ''}
@@ -1082,6 +1103,7 @@ const THEMES = [
   ['solarized', 'Solarized', 'warm, light', ['#fdf6e3', '#fffbf0', '#268bd2']],
   ['sky', 'Sky', 'cool blue-white, crisp', ['#f3f7fb', '#ffffff', '#0b72c4']],
   ['contrast', 'High contrast', 'black on white, strong borders', ['#ffffff', '#000000', '#0033cc']],
+  ['mono', 'Black & white', 'pure monochrome, light', ['#ffffff', '#000000', '#000000']],
   ['github', 'GitHub light', 'high contrast, like GitHub', ['#ffffff', '#f6f8fa', '#0349b4']],
   ['katet', 'Katet', 'the brand: paper, ink, amber', ['#e6e9ee', '#ffffff', '#b86511']],
   ['katet-dark', 'Katet dark', 'the brand on ink', ['#15171c', '#1d2026', '#e08a2e']],
@@ -1180,7 +1202,7 @@ function renderNewForm(dr) {
       <label>Repos <span class="opt">optional · one path per line</span><textarea data-draft="new#repos" rows="2" placeholder="${esc(data.conf['repo-hint'])}">${esc(nf('repos'))}</textarea></label>
       ${known.length ? `<div class="known">${known.map(r => `<button class="chip key" data-addrepo="${esc(r)}" title="Add ${esc(r)}">+ ${esc(r.split('/').pop())}</button>`).join('')}</div>` : ''}
       <label class="check"><input type="checkbox" data-draft="new#draft" ${draftOn === 'true' ? 'checked' : ''}>
-        Let an agent draft the agentfile now <span class="opt">${coordOn ? 'the coordinator starts a worker on it' : 'coordinator not running — it will be picked up once you start it'}</span></label>
+        Let a worker draft the agentfile now <span class="opt">${coordOn ? 'the coordinator starts a worker on it' : 'coordinator not running — it will be picked up once you start it'}</span></label>
       <div class="row end"><button class="btn" data-close>Cancel</button><button class="btn primary" data-create>Create task</button></div>
     </div>`;
 }
@@ -1200,7 +1222,7 @@ async function createTask(btn) {
   Object.keys(drafts).filter(k => k.startsWith('new#')).forEach(k => delete drafts[k]);
   await poll();
   ui.task = res.slug; ui.tab = 'overview'; render();
-  toast(body.draft ? 'Task created — an agent will draft it' : 'Task created in open');
+  toast(body.draft ? 'Task created — a worker will draft it' : 'Task created in open');
 }
 
 /* While a worker edits the task, the card's own inputs are switched off: an edit would be refused
@@ -1235,8 +1257,8 @@ async function renderDrawer() {
           ? `<a class="chip key" href="${esc(t.ticketUrl)}" target="_blank" rel="noopener">${esc(k)} ↗</a>`
           : `<span class="chip key">${esc(k)}</span>`).join('')}
         <div class="actions">
-          ${t.folder !== 'done' ? `<button class="btn ${/^action: accept/.test(t.waitingOn) ? 'primary' : ''}" data-accept="${esc(t.slug)}" title="Accept the result: Status becomes done and the file moves to tasks/done/ (git mv). Agents never do this; it is your call.">✓ Accept → done</button>` : ''}
-          <button class="btn ${/^action: accept/.test(t.waitingOn) ? '' : 'primary'}" data-copy="${esc(agentPrompt(t))}" title="Copy for your coding agent:\n${esc(agentPrompt(t))}">${ICON.prompt}Prompt</button>
+          ${t.folder !== 'done' ? `<button class="btn ${/^action: accept/.test(t.waitingOn) ? 'primary' : ''}" data-accept="${esc(t.slug)}" title="Accept the result: Status becomes done and the file moves to tasks/done/ (git mv). Workers never do this; it is your call.">✓ Accept → done</button>` : ''}
+          <button class="btn ${/^action: accept/.test(t.waitingOn) ? '' : 'primary'}" data-copy="${esc(agentPrompt(t))}" title="Copy the prompt for a session you run yourself:\n${esc(agentPrompt(t))}">${ICON.prompt}Prompt</button>
           ${editorButton(t)}
           <button class="btn" data-copy="${esc(t.abs)}" title="Copy absolute path">${ICON.copy}Path</button>
           <button class="btn icon" data-close title="Close (Esc)">${ICON.x}</button>
@@ -1258,7 +1280,7 @@ async function renderDrawer() {
 
   if (ui.tab === 'overview') { body.innerHTML = overview(t); addCopy(body); if (beingWorked(t)) lockInputs(body); }
   else if (ui.tab === 'doc') {
-    body.innerHTML = `<div class="callout-hidden">Agent callout hidden · read-only view of <code>${esc(t.file)}</code></div><div class="md">${block(stripCallout(t.markdown))}</div>`;
+    body.innerHTML = `<div class="callout-hidden">Callout for workers hidden · read-only view of <code>${esc(t.file)}</code></div><div class="md">${block(stripCallout(t.markdown))}</div>`;
     decorateMd(body);
   } else {
     const path = ui.tab.slice(2);
@@ -1287,13 +1309,13 @@ const unseenReply = t => { const m = lastAgent(t); return !!m && !t.chatKey && s
 function chatState(t) {
   if (!t.chatKey || t.folder === 'done') return '';
   const w = coord && coord.alive && coord.worker;
-  if (w && w.slug === t.slug) return '<div class="cstate busy"><i class="cdot busy"></i>agent is replying…</div>';
-  if (!coord || !coord.alive) return '<div class="cstate">waiting for an agent — the coordinator is not running; start it, or hand the Prompt to a session</div>';
-  if (onHold(t.slug)) return '<div class="cstate">on hold — the agent starts when you switch the hold off</div>';
-  if (coord.coordinator.paused) return `<div class="cstate">agents paused until ${esc((coord.coordinator.paused.until || '').slice(11, 16))} — the last run hit a limit (${esc(coord.coordinator.paused.reason)}); <a data-trigger="${esc(t.slug)}">start a worker anyway</a></div>`;
-  if ((coord.coordinator.holding || []).includes(t.slug)) return '<div class="cstate">held while you work here — the agent starts when you leave the field, or half a minute after your last tick or answer</div>';
-  if ((coord.queue || []).some(q => q.slug === t.slug)) return '<div class="cstate">queued — the agent replies when its turn comes</div>';
-  return '<div class="cstate">waiting for the agent — <a data-trigger="' + esc(t.slug) + '">start a worker now</a></div>';
+  if (w && w.slug === t.slug) return '<div class="cstate busy"><i class="cdot busy"></i>worker is replying…</div>';
+  if (!coord || !coord.alive) return '<div class="cstate">waiting for a worker — the coordinator is not running; start it, or hand the Prompt to a session</div>';
+  if (onHold(t.slug)) return '<div class="cstate">on hold — the worker starts when you switch the hold off</div>';
+  if (coord.coordinator.paused) return `<div class="cstate">workers paused until ${esc((coord.coordinator.paused.until || '').slice(11, 16))} — the last run hit a limit (${esc(coord.coordinator.paused.reason)}); <a data-trigger="${esc(t.slug)}">start a worker anyway</a></div>`;
+  if ((coord.coordinator.holding || []).includes(t.slug)) return '<div class="cstate">held while you work here — the worker starts when you leave the field, or half a minute after your last tick or answer</div>';
+  if ((coord.queue || []).some(q => q.slug === t.slug)) return '<div class="cstate">queued — the worker replies when its turn comes</div>';
+  return '<div class="cstate">waiting for a worker — <a data-trigger="' + esc(t.slug) + '">start one now</a></div>';
 }
 /* a run asked for by hand: the coordinator queues it ahead, holds and loop flags do not apply */
 async function triggerWorker(slug) {
@@ -1309,14 +1331,14 @@ function chatBlock(t) {
   return `<section class="chat" id="sec-chat">
     <h3>Chat <span class="c">newest first · your message starts a worker, it replies here</span></h3>
     <div class="answer-form wide composer">
-      <textarea data-draft="${esc(key)}" rows="${Math.min(14, Math.max(2, String(drafts[key] ?? '').split('\n').length + 1))}" placeholder="Message the agent — a question, an update, the next prompt (markdown)">${esc(drafts[key] ?? '')}</textarea>
+      <textarea data-draft="${esc(key)}" rows="${Math.min(14, Math.max(2, String(drafts[key] ?? '').split('\n').length + 1))}" placeholder="Message the worker — a question, an update, the next prompt (markdown)">${esc(drafts[key] ?? '')}</textarea>
       <div class="row"><small>⌘↵ to send · appended to <code>## Chat</code></small>
         <button class="btn primary" data-send-chat="${esc(t.slug)}">Send</button></div>
     </div>
     ${chatState(t)}
     ${msgs.length ? `<div class="msgs">${(ui.chatAll.has(t.slug) ? msgs : msgs.slice(-CHAT_SHOWN)).slice().reverse().map(m => {
       const lines = m.text.split('\n').length, long = m.text.length > 600 || lines > 8, open = ui.expanded.has(msgId(m));
-      return `<div class="msg ${m.who}"><div class="mh">${m.who === 'you' ? 'you' : 'agent'}${m.at ? ' · ' + esc(m.at) : ''}</div>
+      return `<div class="msg ${m.who}"><div class="mh">${m.who === 'you' ? 'you' : 'worker'}${m.at ? ' · ' + esc(m.at) : ''}</div>
         <div class="md${long && !open ? ' clamp' : ''}">${block(m.text, true)}</div>
         ${long ? `<button class="more" data-expand="${esc(msgId(m))}">${open ? 'Show less' : `Show more · ${lines} lines`}</button>` : ''}</div>`; }).join('')}
       ${msgs.length > CHAT_SHOWN ? `<button class="more older" data-chat-all="${esc(t.slug)}">${ui.chatAll.has(t.slug) ? `Show only the last ${CHAT_SHOWN}` : `Show ${msgs.length - CHAT_SHOWN} older message${msgs.length - CHAT_SHOWN === 1 ? '' : 's'}`}</button>` : ''}</div>` : ''}
@@ -1374,7 +1396,7 @@ function overview(t) {
     </section>
     ${chatBlock(t)}
     ${t.questions.length ? `<section id="sec-q">
-      <h3>Open questions <span class="c">${unanswered(t).length} for you · ${answeredOpen(t).length} with the agent · ${qDone.length} decided</span></h3>
+      <h3>Open questions <span class="c">${unanswered(t).length} for you · ${answeredOpen(t).length} with the worker · ${qDone.length} decided</span></h3>
       ${qOpen.map(q => qBlock(q, t)).join('') || '<div class="empty">all answered</div>'}
       ${qDone.length ? `<details class="more-done" data-fold="decisions" ${ui.folds?.has('decisions') ? 'open' : ''}><summary>Decision record · ${qDone.length}</summary>${qDone.map(q => qBlock(q, t)).join('')}</details>` : ''}
     </section>` : ''}
@@ -1398,7 +1420,7 @@ function overview(t) {
       </div>`).join('')}</section>` : ''}
     ${links.length ? `<section id="sec-brief"><h3>Briefing</h3><dl class="kv">${links.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${linkify(v)}</dd>`).join('')}</dl></section>` : ''}
     ${usageBlock(t)}
-    ${t.lastLog ? `<section><h3>Latest agent log <span class="c">${t.logCount} entries</span></h3><div class="logline">${inl(t.lastLog)}</div></section>` : ''}`;
+    ${t.lastLog ? `<section><h3>Latest log entry <span class="c">${t.logCount} in Agent logs</span></h3><div class="logline">${inl(t.lastLog)}</div></section>` : ''}`;
 }
 /* marked already turns bare URLs into links (gfm autolink); a second regex pass over the rendered
    HTML would re-open the sanitizer's door, so there is none */
@@ -1467,7 +1489,7 @@ function loopBlock() {
   if (!slugs.length) return '';
   return `<div class="warn"><b>Possible loop</b> — no worker starts on ${slugs.length > 1 ? 'these tasks' : 'this task'} until you act on ${slugs.length > 1 ? 'them' : 'it'}:
     ${slugs.map(sl => `<div style="margin-top:6px"><a data-open="${esc(sl)}">${esc(sl)}</a> <span class="c">· ${loop[sl].runs} runs in a row were started by changes made while its worker ran (${esc((loop[sl].triggers || []).join(', '))})</span></div>`).join('')}
-    <div class="c" style="margin-top:6px">Usually an agent wrote something in Chat that reads as your message. Check the file, then send a message or answer a question there to continue.</div></div>`;
+    <div class="c" style="margin-top:6px">Usually a worker wrote something in Chat that reads as your message. Check the file, then send a message or answer a question there to continue.</div></div>`;
 }
 function stuckBlock() {
   const stuck = Object.keys((coord && coord.stuck) || {}).filter(sl => data.tasks.some(t => t.slug === sl && t.folder === 'in-progress'));
@@ -1544,10 +1566,10 @@ function renderSettings() {
       <div class="body">${kv({ workspace: settings.workspace, framework: settings.framework, board: location.origin })}</div></div>
     <div class="group"><header><span class="t">katet.conf</span><span class="when">port, editor button, ticket links</span></header>
       <div class="body">${kv(settings.conf)}<h4>file</h4>${file('katet.conf', 'text')}</div></div>
-    <div class="group"><header><span class="t">coordinator.tools</span><span class="when">workers: agent, limits, allow / deny</span></header>
+    <div class="group"><header><span class="t">coordinator.tools</span><span class="when">workers: agent CLI, limits, allow / deny</span></header>
       <div class="body">${kv(t.settings)}<h4>rules</h4><div class="c">${t.allow.length} allow · ${t.deny.length} deny — the coordinator adds the workspace's own setup files and every <code>.git/</code> to the denies.</div>
       <h4>file</h4>${file('coordinator.tools', 'text')}</div></div>
-    <div class="group"><header><span class="t">CLAUDE.md</span><span class="when">the agents' rules: the framework's KATET.md, imported, plus what is yours</span></header>
+    <div class="group"><header><span class="t">CLAUDE.md</span><span class="when">the workers' rules: the framework's KATET.md, imported, plus what is yours</span></header>
       <div class="body">${file('CLAUDE.md', 'markdown')}</div></div>
   </div>`;
 }
@@ -1649,14 +1671,14 @@ async function sendChat(btn) {
   if (await write(t, { op: 'message', text })) {
     delete drafts[key];
     document.activeElement && document.activeElement.blur();   // releases the typing lock right away
-    toast(coord && coord.alive ? 'Sent — the agent replies here' : 'Sent — start the coordinator for a reply');
+    toast(coord && coord.alive ? 'Sent — the worker replies here' : 'Sent — start the coordinator for a reply');
     render();
   } else btn.disabled = false;
 }
 async function clearOutcome(btn) {
   const t = data.tasks.find(x => x.slug === btn.dataset.clearOutcome), qid = btn.dataset.qid;
   if (!t) return;
-  if (!confirm(`Clear the outcome of ${qid} and reopen it?\n\nThe agent will act on your answer again. The old outcome stays in git history.`)) return;
+  if (!confirm(`Clear the outcome of ${qid} and reopen it?\n\nThe worker will act on your answer again. The old outcome stays in git history.`)) return;
   btn.disabled = true;
   if (await write(t, { op: 'clear-outcome', qid })) {
     editing.add(t.file + '#' + qid);  // reopened: put the answer straight into edit mode
@@ -1672,10 +1694,11 @@ async function tick(el) {
   if (busy.has(key)) return;
   busy.add(key); el.closest('li').classList.add('busy');
   const k = tickKey(t, section, item), had = justTicked.has(k);
-  if (!item.done) justTicked.add(k);
+  if (!item.done) justTicked.set(k, Date.now());
   const ok = await write(t, { op: 'toggle', section, index: idx, text: item.text, done: !item.done });
   busy.delete(key);
   if (!ok && !had) justTicked.delete(k);
+  if (ok && !item.done) setTimeout(() => { const a = document.activeElement; if (data && !(a && a.dataset && a.dataset.draft) && !selecting()) render(); }, TICK_LINGER + 200);
   if (ok) { noteAction(t.slug); toast(item.done ? 'Unticked' : 'Ticked — click the box again to undo'); }
   render();
 }
@@ -1716,6 +1739,7 @@ document.addEventListener('click', e => {
   if (tr) { const slug = tr.dataset.trigger || ($('#triggerPick') && $('#triggerPick').value); if (slug) triggerWorker(slug); return; }
   const ca = e.target.closest('[data-chat-all]');
   if (ca) { const sl = ca.dataset.chatAll; if (ui.chatAll.has(sl)) ui.chatAll.delete(sl); else ui.chatAll.add(sl); render(); return; }
+  if (e.target.closest('[data-done-all]')) { ui.doneAll = !ui.doneAll; render(); return; }
   const ex = e.target.closest('[data-expand]');
   if (ex) { const id = ex.dataset.expand; if (ui.expanded.has(id)) ui.expanded.delete(id); else ui.expanded.add(id); render(); return; }
   const cr = e.target.closest('[data-chat-about]');
